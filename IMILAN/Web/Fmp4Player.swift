@@ -14,8 +14,9 @@ import VideoToolbox
 /// 经 AVSampleBufferDisplayLayer 用 VideoToolbox 硬解显示。
 /// 音频轨（Opus）直接忽略，不解码。
 ///
-/// 注意 hev1 vs hvc1：这里不依赖 sample entry 的类型，而是直接从 hvcC
-/// 的 VPS/SPS/PPS 建 CMFormatDescription，所以 hev1 样条也能解。
+/// 注意 hev1 vs hvc1：这里不依赖 sample entry 的类型，而是把完整 hvcC
+/// box 作为 SampleDescriptionExtensionAtoms 交给 CoreMedia 建格式描述，
+/// 所以 hev1 样条也能解。
 final class Fmp4Player: NSObject, ObservableObject {
     @Published var isPlaying = false
     @Published var lastError: String?
@@ -455,68 +456,55 @@ private final class Fmp4Demuxer {
         guard type == "hev1" || type == "hvc1" else { return nil }
         let entrySize = Int(size32)
         // visual sample entry：8 字节 box 头 + 78 字节固定字段，之后是子 box。
+        // 宽高在固定字段内：entry 内容偏移 24（width，BE u16）、26（height）。
         guard entrySize >= 86, entryStart + entrySize <= r.end else { return nil }
+        let contentStart = entryStart + 8
+        let width = (Int(r.bytes[contentStart + 24]) << 8) | Int(r.bytes[contentStart + 25])
+        let height = (Int(r.bytes[contentStart + 26]) << 8) | Int(r.bytes[contentStart + 27])
+        guard width > 0, height > 0 else { return nil }
         let childrenReader = BoxReader(r.bytes, range: (entryStart + 8 + 78)..<(entryStart + entrySize))
         for (childType, childBox) in childrenReader.children() {
             guard childType == "hvcC" else { continue }
             let payload = Array(childBox.bytes[childBox.offset..<childBox.end])
-            return parseHvcC(payload)
+            return parseHvcC(payload, width: width, height: height)
         }
         return nil
     }
 
-    /// hvcC：23 字节头后是 NAL 数组；取 VPS(32)/SPS(33)/PPS(34) 建格式描述。
-    /// numOfArrays 在第 22 字节；lengthSizeMinusOne 在第 21 字节低 2 位。
-    private func parseHvcC(_ payload: [UInt8]) -> (formatDescription: CMFormatDescription, nalLengthSize: Int)? {
+    /// hvcC：lengthSizeMinusOne 在第 21 字节低 2 位。
+    /// 格式描述不用 CMVideoFormatDescriptionCreateFromHVCParameterSets
+    ///（该符号在 Xcode 16.4 / iOS 18.5 SDK 的 Swift 接口里不可见，
+    ///两次 CI 均报 cannot find in scope），改用
+    /// CMVideoFormatDescriptionCreate + SampleDescriptionExtensionAtoms，
+    /// 把完整 hvcC box 交给 CoreMedia，由它解析 VPS/SPS/PPS。
+    private func parseHvcC(_ payload: [UInt8], width: Int, height: Int) -> (formatDescription: CMFormatDescription, nalLengthSize: Int)? {
         guard payload.count >= 23, payload[0] == 1 else { return nil }
         let nalLength = Int(payload[21] & 0x03) + 1
-        let numArrays = Int(payload[22])
-        var offset = 23
-        var parameterSets: [Data] = []
-        for _ in 0..<numArrays {
-            guard offset + 3 <= payload.count else { return nil }
-            let nalType = payload[offset] & 0x3F
-            let numNalus = (Int(payload[offset + 1]) << 8) | Int(payload[offset + 2])
-            offset += 3
-            for _ in 0..<numNalus {
-                guard offset + 2 <= payload.count else { return nil }
-                let len = (Int(payload[offset]) << 8) | Int(payload[offset + 1])
-                offset += 2
-                guard offset + len <= payload.count else { return nil }
-                if nalType == 32 || nalType == 33 || nalType == 34 {
-                    parameterSets.append(Data(payload[offset..<(offset + len)]))
-                }
-                offset += len
-            }
-        }
-        guard !parameterSets.isEmpty else { return nil }
-        guard let desc = makeHVCFormatDescription(parameterSets: parameterSets, nalLengthSize: nalLength) else { return nil }
+        var box = [UInt8]()
+        box.reserveCapacity(payload.count + 8)
+        let total = UInt32(payload.count + 8)
+        box.append(contentsOf: [UInt8((total >> 24) & 0xFF), UInt8((total >> 16) & 0xFF),
+                                UInt8((total >> 8) & 0xFF), UInt8(total & 0xFF)])
+        box.append(contentsOf: [UInt8(ascii: "h"), UInt8(ascii: "v"),
+                                UInt8(ascii: "c"), UInt8(ascii: "C")])
+        box.append(contentsOf: payload)
+        guard let desc = makeHVCFormatDescription(hvccBox: Data(box), width: width, height: height) else { return nil }
         return (desc, nalLength)
     }
 
-    private func makeHVCFormatDescription(parameterSets: [Data], nalLengthSize: Int) -> CMFormatDescription? {
-        var buffers: [UnsafeMutablePointer<UInt8>] = []
-        buffers.reserveCapacity(parameterSets.count)
-        for data in parameterSets {
-            let ptr = UnsafeMutablePointer<UInt8>.allocate(capacity: max(data.count, 1))
-            data.copyBytes(to: ptr, count: data.count)
-            buffers.append(ptr)
-        }
-        defer { buffers.forEach { $0.deallocate() } }
-        var pointers: [UnsafePointer<UInt8>?] = buffers.map { UnsafePointer($0) }
-        var sizes: [Int] = parameterSets.map { $0.count }
+    private func makeHVCFormatDescription(hvccBox: Data, width: Int, height: Int) -> CMFormatDescription? {
         var desc: CMFormatDescription?
-        let status = pointers.withUnsafeBufferPointer { ptrBuf in
-            sizes.withUnsafeBufferPointer { sizeBuf in
-                CMVideoFormatDescriptionCreateFromHVCParameterSets(
-                    allocator: kCFAllocatorDefault,
-                    parameterSetCount: parameterSets.count,
-                    parameterSets: ptrBuf.baseAddress!,
-                    parameterSetSizes: sizeBuf.baseAddress!,
-                    nalUnitHeaderLength: Int32(nalLengthSize),
-                    formatDescriptionOut: &desc)
-            }
-        }
+        let atoms: [String: Data] = ["hvcC": hvccBox]
+        let extensions: [String: Any] = [
+            kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms as String: atoms
+        ]
+        let status = CMVideoFormatDescriptionCreate(
+            allocator: kCFAllocatorDefault,
+            codecType: kCMVideoCodecType_HEVC,
+            width: Int32(width),
+            height: Int32(height),
+            extensions: extensions as CFDictionary,
+            formatDescriptionOut: &desc)
         guard status == noErr else { return nil }
         return desc
     }
