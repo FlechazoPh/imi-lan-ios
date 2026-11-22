@@ -35,6 +35,13 @@ struct QRLoginView: View {
                                     Text("获取二维码失败")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                } else if login.phase == .expired {
+                                    Image(systemName: "clock.badge.exclamationmark")
+                                        .font(.system(size: 48))
+                                        .foregroundStyle(.orange)
+                                    Text("二维码已过期，请点下方刷新重新获取")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 } else {
                                     ProgressView()
                                     Text("正在获取二维码…")
@@ -51,6 +58,11 @@ struct QRLoginView: View {
                     Text("二维码有效期还剩 \(login.expiresIn) 秒")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                if !login.diagnostics.isEmpty {
+                    Text(login.diagnostics)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
                 if let error = login.errorMessage {
                     Text(error)

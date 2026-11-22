@@ -5,7 +5,7 @@ import Foundation
 /// 流程：
 ///   1. GET account.xiaomi.com/longPolling/loginUrl 拿二维码（JSONP）；
 ///   2. GET 二维码图片地址取图，界面真实显示；
-///   3. 每 1 秒轮询 lp，扫码后 location+userId 非空即进入 handleScan；
+///   3. 长轮询 lp，扫码后 location+userId 非空即进入 handleScan；
 ///   4. 手动跟随 location 链（最多 12 跳），沿途收 Cookie 与
 ///      Extension-Pragma 头里的 ssecurity；passToken 有但 ssecurity 为空时
 ///      兜底走 serviceLogin；
@@ -15,6 +15,19 @@ import Foundation
 /// 会话管理：ephemeral URLSession，httpShouldSetCookies=false，
 /// 自己拼 Cookie 头；不自动跟随重定向（delegate 里一律拦截），手动跟随。
 /// 所有失败都在界面显示真实错误文案，不留占位。
+///
+/// 2026-11-22 r6 真机反馈“二维码刚生成就过期”后的修复（r7，实测证据见
+/// docs/CAMERA-4PRO.md §7）：
+///   a. lp 是真长轮询：服务端无扫码时静默持有连接，实测 90 秒都不回包。
+///      之前轮询请求只给 25 秒超时，等于每 25 秒主动掐断一次长轮询。
+///      改为 280 秒（票据有效期 300 秒内基本不断开，只在服务端回包或
+///      扫码时才重新发起）。
+///   b. 倒计时之前只在轮询循环里更新，而轮询一次就挂 25 秒以上，界面
+///      上会长时间停在 299 秒。改为独立 1 秒 ticker 更新倒计时。
+///   c. 过期后旧二维码图片还留在界面上，扫了就是过期码。改为过期时
+///      立即清空图片；剩余 30 秒时自动刷新一张新码。
+///   d. 旧会话收尾时可能覆盖新会话的图片（代际竞争）。写图片/倒计时
+///      前校验 generation，只认当前代。
 @MainActor
 final class XiaomiQRLogin: NSObject, ObservableObject, URLSessionTaskDelegate {
     enum Phase: Equatable {
@@ -37,12 +50,23 @@ final class XiaomiQRLogin: NSObject, ObservableObject, URLSessionTaskDelegate {
     @Published private(set) var errorMessage: String?
     @Published private(set) var expiresIn = 0
     @Published private(set) var deviceCount: Int?
+    /// 诊断行（界面小字显示，不含任何票据/令牌）：如 "c3 · 已生成 12 秒 · 轮询中"。
+    @Published private(set) var diagnostics = ""
 
     private var session: URLSession!
     private var pollTask: Task<Void, Never>?
+    private var tickerTask: Task<Void, Never>?
     private var sessionGeneration = 0
     private var expiresAt: Date?
+    private var generatedAt: Date?
+    private var loginHost = ""
     private var canceled = false
+
+    /// 剩余 30 秒时自动刷新新码（旧码快过期了，别让用户扫到过期码）。
+    private static let autoRefreshThreshold = 30
+    /// lp 长轮询的单次超时：服务端持有连接超过 90 秒仍不回包（实测），
+    /// 25 秒必被客户端掐断；280 秒基本覆盖整张票的有效期（300 秒）。
+    private static let longPollTimeout: TimeInterval = 280
 
     override init() {
         super.init()
@@ -85,9 +109,56 @@ final class XiaomiQRLogin: NSObject, ObservableObject, URLSessionTaskDelegate {
         canceled = true
         pollTask?.cancel()
         pollTask = nil
+        tickerTask?.cancel()
+        tickerTask = nil
         if phase != .success {
             phase = .canceled
             statusMessage = "已取消"
+        }
+    }
+
+    /// 只停轮询与 ticker，不动 phase（过期/自动刷新内部用，避免界面闪一下“已取消”）。
+    private func stopPolling() {
+        canceled = true
+        pollTask?.cancel()
+        pollTask = nil
+        tickerTask?.cancel()
+        tickerTask = nil
+    }
+
+    /// 旧码快过期时自动换新码：停掉旧会话（不改 phase），立即开新会话。
+    private func autoRefresh() {
+        stopPolling()
+        start()
+    }
+
+    /// 独立 1 秒 ticker：刷新倒计时与诊断行；剩余 30 秒自动换新码；
+    /// 到期时把过期码图片清掉，不再可扫。
+    private func startTicker(generation: Int) {
+        tickerTask?.cancel()
+        tickerTask = Task {
+            while !Task.isCancelled {
+                guard generation == sessionGeneration, !canceled else { return }
+                if let exp = expiresAt {
+                    let left = Int(exp.timeIntervalSinceNow)
+                    expiresIn = max(0, left)
+                    let ago = generatedAt.map { max(0, Int(Date().timeIntervalSince($0))) } ?? 0
+                    diagnostics = "\(loginHost) · 已生成 \(ago) 秒 · 轮询中"
+                    if left <= 0 {
+                        phase = .expired
+                        statusMessage = "二维码已过期，请刷新"
+                        qrImageData = nil
+                        diagnostics = "\(loginHost) · 二维码已过期"
+                        stopPolling()
+                        return
+                    }
+                    if left <= Self.autoRefreshThreshold && phase == .waiting {
+                        autoRefresh()
+                        return
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
         }
     }
 
@@ -99,15 +170,23 @@ final class XiaomiQRLogin: NSObject, ObservableObject, URLSessionTaskDelegate {
         errorMessage = nil
         qrImageData = nil
         deviceCount = nil
+        diagnostics = ""
         let jar = CookieJar()
         do {
             let (lp, qrURL, timeout) = try await fetchLoginURL(jar: jar)
+            guard generation == sessionGeneration, !Task.isCancelled else { return }
+            loginHost = URL(string: lp)?.host?.split(separator: ".").first.map(String.init) ?? ""
             let image = try await fetchQRImage(url: qrURL, jar: jar)
+            // 代际校验：旧会话收尾不许覆盖新会话的图片/倒计时。
+            guard generation == sessionGeneration, !Task.isCancelled else { return }
             qrImageData = image
+            generatedAt = Date()
             expiresAt = Date().addingTimeInterval(TimeInterval(timeout))
             expiresIn = timeout
+            diagnostics = "\(loginHost) · 刚刚生成"
             phase = .waiting
             statusMessage = "等待扫码"
+            startTicker(generation: generation)
             try await pollScan(lp: lp, jar: jar)
         } catch is CancellationError {
             // Task 被取消：cancel() 已置状态，这里不再覆盖。
@@ -118,7 +197,11 @@ final class XiaomiQRLogin: NSObject, ObservableObject, URLSessionTaskDelegate {
             statusMessage = "登录失败"
         }
         // 只清自己的引用：刷新时旧任务收尾不能把新会话的 pollTask 置空。
-        if generation == sessionGeneration { pollTask = nil }
+        if generation == sessionGeneration {
+            pollTask = nil
+            tickerTask?.cancel()
+            tickerTask = nil
+        }
     }
 
     /// 第 b 步：取 loginUrl（JSONP），返回（轮询地址，二维码地址，有效秒数）。
@@ -166,7 +249,10 @@ final class XiaomiQRLogin: NSObject, ObservableObject, URLSessionTaskDelegate {
         return data
     }
 
-    /// 第 d 步：每 1 秒轮询 lp，直到扫码、过期或取消。
+    /// 第 d 步：长轮询 lp，直到扫码、过期或取消。
+    /// 服务端无扫码时静默持有连接超过 90 秒（实测），所以单次轮询给
+    /// 280 秒超时：不断开、不重建，只在服务端回包（扫码）或票据过期
+    /// 时才结束；倒计时与自动刷新由独立 ticker 负责，这里不再碰。
     private func pollScan(lp: String, jar: CookieJar) async throws {
         guard let lpURL = URL(string: lp) else { throw QRLoginError.invalidResponse("长轮询地址无效") }
         while true {
@@ -175,13 +261,11 @@ final class XiaomiQRLogin: NSObject, ObservableObject, URLSessionTaskDelegate {
             if let exp = expiresAt, Date() > exp {
                 phase = .expired
                 statusMessage = "二维码已过期，请刷新"
+                qrImageData = nil
                 return
             }
-            if let exp = expiresAt {
-                expiresIn = max(0, Int(exp.timeIntervalSinceNow))
-            }
             do {
-                let (data, response) = try await requestFollow(lpURL, jar: jar)
+                let (data, response) = try await requestFollow(lpURL, jar: jar, timeout: Self.longPollTimeout)
                 if response.statusCode == 200, let obj = try? parseJSONP(data) {
                     let location = stringValue(obj["location"])
                     let userId = stringValue(obj["userId"])
@@ -193,7 +277,8 @@ final class XiaomiQRLogin: NSObject, ObservableObject, URLSessionTaskDelegate {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                // 单次轮询失败（网络抖动等）不报错，下一秒继续轮询；只在过期时结束。
+                // 单次轮询失败（网络抖动、超时等）不报错，下一秒继续轮询；
+                // 只在过期时结束（ticker 会处理过期与自动刷新）。
             }
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
@@ -328,8 +413,9 @@ final class XiaomiQRLogin: NSObject, ObservableObject, URLSessionTaskDelegate {
     // MARK: - HTTP 基础（手动 Cookie + 手动重定向）
 
     /// 单次 GET，不跟随重定向；返回（body, 响应），并把 Set-Cookie 存进 jar。
-    private func requestOnce(_ url: URL, jar: CookieJar) async throws -> (Data, HTTPURLResponse) {
-        var request = URLRequest(url: url, timeoutInterval: 25)
+    /// timeout 是单次请求的无数据超时：普通请求 25 秒；lp 长轮询 280 秒。
+    private func requestOnce(_ url: URL, jar: CookieJar, timeout: TimeInterval = 25) async throws -> (Data, HTTPURLResponse) {
+        var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = "GET"
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("zh-CN,zh;q=0.9", forHTTPHeaderField: "Accept-Language")
@@ -345,11 +431,11 @@ final class XiaomiQRLogin: NSObject, ObservableObject, URLSessionTaskDelegate {
     }
 
     /// GET 并手动跟随重定向，最多 6 跳；返回最终的（body, 响应）。
-    private func requestFollow(_ url: URL, jar: CookieJar, maxHops: Int = 6) async throws -> (Data, HTTPURLResponse) {
+    private func requestFollow(_ url: URL, jar: CookieJar, maxHops: Int = 6, timeout: TimeInterval = 25) async throws -> (Data, HTTPURLResponse) {
         var current = url
         var last: (Data, HTTPURLResponse)?
         for _ in 0..<maxHops {
-            let (data, response) = try await requestOnce(current, jar: jar)
+            let (data, response) = try await requestOnce(current, jar: jar, timeout: timeout)
             last = (data, response)
             if (300..<400).contains(response.statusCode),
                let loc = response.value(forHTTPHeaderField: "Location"),
