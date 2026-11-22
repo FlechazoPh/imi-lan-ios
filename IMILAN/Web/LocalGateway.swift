@@ -27,7 +27,14 @@ enum LocalGateway {
             .secure: "FALSE",
             .expires: Date(timeIntervalSinceNow: 365 * 24 * 3600),
         ])
-        if let cookie { await store.setCookie(cookie) }
+        if let cookie {
+            // WKWebsiteDataStore 本身没有 setCookie；Cookie 属于
+            // WKHTTPCookieStore（经 dataStore.httpCookieStore 访问）。
+            // 用 completion-handler 版包一层 continuation，兼容各 SDK。
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                store.httpCookieStore.setCookie(cookie) { cont.resume() }
+            }
+        }
     }
 
     /// TODO (Phase 2): 健康检查 GET {baseURL}health，免令牌。
