@@ -1,0 +1,223 @@
+# IMI-LAN iOS — GitHub Actions 打 IPA（Phase 2，未验证）
+#
+# 顺序：取补丁 → 编 Go 引擎（c-archive）→ 编 Xcode。引擎编不出来时直接失败，
+# 不会静默出一个“壳能启动、引擎是空的”包。
+#
+# 签名模式由 workflow_dispatch 的 signing_mode 控制，默认 unsigned：
+#   - unsigned  ：未签名 IPA（CODE_SIGN_IDENTITY=""），下载后侧载。
+#   - developer ：已签名 IPA（须在仓库 Secrets 里配好 5 个签名 secret，
+#                 见 docs/SIGNING.md §3；缺任一 secret 直接报错，不静默回退未签名）。
+# Team ID、证书、描述文件一律取自 Secrets，workflow 里不写死任何真实值。
+#
+# multicast_approved：只有 Apple 已批准 multicast entitlement 才传 true。
+#   - false（默认）：签名分支也不传 CODE_SIGN_ENTITLEMENTS，不会因缺 entitlement 签名失败。
+#   - true：签名分支传 CODE_SIGN_ENTITLEMENTS=IMILAN/IMILAN.entitlements，
+#     且描述文件必须是获批后重新生成的（见 docs/MULTICAST-ENTITLEMENT.md §4）。
+#   未签名分支永远不传 entitlement。
+#
+# imi_lan_ref：取补丁用的 IMI-LAN 上游 ref，为空时取默认分支并打印 commit SHA。
+#   不要凭空编一个 tag——先确认上游确实有这个 ref 再传。
+#
+# 触发：push tag v*，或手动 workflow_dispatch（可选手 signing_mode）。
+name: Build IPA
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      signing_mode:
+        description: "签名模式：unsigned（默认，未签名）或 developer（开发者账号已签名）"
+        required: true
+        default: "unsigned"
+        type: choice
+        options: ["unsigned", "developer"]
+      multicast_approved:
+        description: "Apple 是否已批准 multicast entitlement（true 才在签名分支传 entitlements）"
+        required: true
+        default: false
+        type: boolean
+      imi_lan_ref:
+        description: "取补丁用的 IMI-LAN 上游 ref（空 = 默认分支）"
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  build:
+    runs-on: macos-15
+    env:
+      GO2RTC_VERSION: v1.9.15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          check-latest: true
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+          go version
+
+      # ---- 取补丁：必须在 Build Go engine 之前 -------------------------
+      # 补丁来自 IMI-LAN 仓库 fpk/patches/，与 go2rtc 1.9.15 的版本耦合。
+      # 首次验证应在 MacBook 上手工取补丁、手工打补丁；CI 上这一步只是把
+      # 同样的取法自动化，并把上游 commit SHA 打印出来以备核对。
+      # 若上游改了补丁导致 dry-run 失败，Build Go engine 会直接报错停下，
+      # 不会静默编一个没打补丁的库。
+      - name: Fetch IMI-LAN patches
+        run: |
+          set -euo pipefail
+          mkdir -p build/patches
+          if [ -n "${{ inputs.imi_lan_ref }}" ]; then
+            git clone --depth 1 --branch "${{ inputs.imi_lan_ref }}" https://github.com/pigstrong9/IMI-LAN.git /tmp/imi-lan-upstream
+          else
+            git clone --depth 1 https://github.com/pigstrong9/IMI-LAN.git /tmp/imi-lan-upstream
+          fi
+          echo "IMI-LAN upstream commit: $(git -C /tmp/imi-lan-upstream rev-parse HEAD)"
+          cp /tmp/imi-lan-upstream/fpk/patches/xiaomi-login.patch build/patches/
+          cp /tmp/imi-lan-upstream/fpk/patches/xiaomi-control.patch build/patches/
+          ls -l build/patches/
+          shasum -a 256 build/patches/*.patch
+
+      # ---- Go 引擎：先编 c-archive，编不出就停 -------------------------
+      - name: Build Go engine (c-archive, iOS arm64)
+        run: |
+          chmod +x scripts/clangwrap-ios.sh scripts/build-go-engine.sh
+          # build-go-engine.sh 会：校验 Go 版本（以 go2rtc go.mod 为准）→
+          # 取 go2rtc 源码 → 按顺序打两个补丁 → 放入口 cmd/libimi →
+          # 编 libgo2rtc.a → lipo/nm 校验 → 交接 vendor/。
+          # 注意：首次跑之前，须先在 MacBook 上把 engine/libimi/main.go.template
+          # 按 go2rtc 源码填好并改名成 engine/libimi/main.go，否则这步会按预期失败。
+          ./scripts/build-go-engine.sh
+
+      - name: Verify Go engine artifact
+        run: |
+          test -s IMILAN/Engine/vendor/libgo2rtc.a || { echo "FAIL: vendor/libgo2rtc.a 缺失" >&2; exit 1; }
+          test -s IMILAN/Engine/vendor/libgo2rtc.h || { echo "FAIL: vendor/libgo2rtc.h 缺失" >&2; exit 1; }
+          lipo -info IMILAN/Engine/vendor/libgo2rtc.a
+
+      - name: Archive (unsigned)
+        if: inputs.signing_mode == 'unsigned' || github.event_name == 'push'
+        run: |
+          xcodebuild -project IMILAN.xcodeproj \
+            -scheme IMILAN \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/IMILAN.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            archive
+          mkdir -p build/Payload
+          cp -R build/IMILAN.xcarchive/Products/Applications/IMILAN.app build/Payload/
+          cd build && zip -r IMI-LAN-iOS-unsigned.ipa Payload
+          ls -lh IMI-LAN-iOS-unsigned.ipa
+
+      # ---- 开发者账号签名分支（默认不跑） -------------------------------
+      - name: Check signing secrets
+        if: inputs.signing_mode == 'developer'
+        run: |
+          test -n "${{ secrets.BUILD_CERTIFICATE_BASE64 }}" || { echo "缺 secret: BUILD_CERTIFICATE_BASE64" >&2; exit 1; }
+          test -n "${{ secrets.P12_PASSWORD }}" || { echo "缺 secret: P12_PASSWORD" >&2; exit 1; }
+          test -n "${{ secrets.PROVISION_PROFILE_BASE64 }}" || { echo "缺 secret: PROVISION_PROFILE_BASE64" >&2; exit 1; }
+          test -n "${{ secrets.KEYCHAIN_PASSWORD }}" || { echo "缺 secret: KEYCHAIN_PASSWORD" >&2; exit 1; }
+          test -n "${{ secrets.IOS_TEAM_ID }}" || { echo "缺 secret: IOS_TEAM_ID" >&2; exit 1; }
+          echo "签名 secrets 齐全（只查非空，不打印值）"
+          echo "multicast_approved=${{ inputs.multicast_approved }}（true 才传 entitlements）"
+
+      - name: Import signing certificate
+        if: inputs.signing_mode == 'developer'
+        run: |
+          # 临时钥匙串（只活在这次运行里），见 docs/SIGNING.md §3.3。
+          security create-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          echo "${{ secrets.BUILD_CERTIFICATE_BASE64 }}" | base64 --decode > build/cert.p12
+          security import build/cert.p12 -k build.keychain -P "${{ secrets.P12_PASSWORD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "${{ secrets.PROVISION_PROFILE_BASE64 }}" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/imi-lan.mobileprovision
+          rm build/cert.p12
+
+      # 签名分支分两条，entitlement 只在获批时传；未获批时绝不传，
+      # 否则签名会因描述文件缺 entitlement 而失败。
+      - name: Archive (signed, developer, no multicast)
+        if: inputs.signing_mode == 'developer' && inputs.multicast_approved == false
+        run: |
+          xcodebuild -project IMILAN.xcodeproj \
+            -scheme IMILAN \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/IMILAN.xcarchive \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="${{ secrets.IOS_TEAM_ID }}" \
+            CODE_SIGN_IDENTITY="Apple Development" \
+            archive
+
+      - name: Archive (signed, developer, with multicast)
+        if: inputs.signing_mode == 'developer' && inputs.multicast_approved == true
+        run: |
+          xcodebuild -project IMILAN.xcodeproj \
+            -scheme IMILAN \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/IMILAN.xcarchive \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="${{ secrets.IOS_TEAM_ID }}" \
+            CODE_SIGN_IDENTITY="Apple Development" \
+            CODE_SIGN_ENTITLEMENTS="IMILAN/IMILAN.entitlements" \
+            archive
+
+      - name: Export signed IPA
+        if: inputs.signing_mode == 'developer'
+        run: |
+          # ExportOptions.plist 由 workflow 临时生成（method=development），不进仓库。
+          # provisioningProfiles 的值须与描述文件显示名一致；若用户在 Secrets 里
+          # 另配了 IOS_PROVISIONING_PROFILE_NAME 就用它，否则默认用 imi-lan。
+          PROFILE_NAME="${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}"
+          PROFILE_NAME="${PROFILE_NAME:-imi-lan}"
+          cat > build/ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>development</string>
+            <key>teamID</key><string>${{ secrets.IOS_TEAM_ID }}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>stripSwiftSymbols</key><true/>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>imi.lan.ios</key><string>${PROFILE_NAME}</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath build/IMILAN.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist build/ExportOptions.plist
+          ls -lh build/export/*.ipa
+          cp build/export/*.ipa build/IMI-LAN-iOS-signed.ipa
+
+      - name: Upload IPA (unsigned)
+        if: inputs.signing_mode == 'unsigned' || github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: IMI-LAN-iOS-unsigned
+          path: build/IMI-LAN-iOS-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Upload IPA (signed)
+        if: inputs.signing_mode == 'developer'
+        uses: actions/upload-artifact@v4
+        with:
+          name: IMI-LAN-iOS-signed
+          path: build/IMI-LAN-iOS-signed.ipa
+          if-no-files-found: error

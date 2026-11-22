@@ -1,0 +1,213 @@
+// main.go.template — go2rtc c-archive 库入口模板草稿（Phase 2，未验证）
+//
+// 这不是可直接编译的文件。把它改名成 main.go 之前，必须先在 MacBook 上按
+// 下面 §A 的 grep 清单在 go2rtc 1.9.15 源码里核对，再填。
+//
+// ---- 关键事实（2026-11-22 经浏览器读公开资料核实，不要推翻） ----
+// go2rtc 没有一个可导出的单一 Run() / Start() 入口函数。
+// 它的启动是：仓库根 main.go（package main，不是 cmd/go2rtc/main.go）里
+//   app.Version = "1.9.15"（fallback）
+//   modules := []module{{"", app.Init}, {"api", api.Init}, {"ws", ws.Init},
+//                        {"", streams.Init}, ...约 53 个模块的 Init()...}
+//   for _, m := range modules { if app.Modules == nil || m.name == "" ||
+//       slices.Contains(app.Modules, m.name) { m.init() } }
+//   streams.SetReady()
+//   shell.RunUntilSignal()   // pkg/shell/shell.go，阻塞等 SIGINT/SIGTERM；
+//                            // 另有 api/exit、api/restart 处理器也能结束进程。
+// app.Init（internal/app/app.go 27-90）做：flag 解析 -c/--config、-d/--daemon、
+//   -v/--version；initConfig() 合并配置；initLogger()；读 app.modules 填
+//   app.Modules []string；导出 app.ConfigPath 等全局变量。
+//   -d daemon 模式会用 os/exec.Command 把自己重执行一次并退出父进程——
+//   iOS 库里绝对不能走这条路。
+// 所以 libimi 的工作不是“调一个 Run()”，而是“把 main.go 的模块列表
+// 原样抄过来，换掉最后的 RunUntilSignal()，再把 app.Init 的命令行
+// 依赖换成 IMIStartEngine 传入的 configPath”。这一步是 V-01 里
+// 工作量最大、风险最高的部分，见 docs/GO-ENGINE-C-ARCHIVE.md §3。
+//
+// ---- §A：在 MacBook 上填模板前的 grep 清单（逐条跑，输出贴回文档） ----
+// 在 build/go2rtc-src/ 里：
+//   grep "^go " go.mod
+//     # 记下 go2rtc 1.9.15 要求的 Go 版本；scripts/build-go-engine.sh 会再校验。
+//   sed -n '1,130p' main.go
+//     # 把 modules []module{...} 的完整列表、import 块、app.Version 一字不差抄下来。
+//     # 不要凭记忆写模块名；1.9.15 与 1.9.14 的列表可能不同。
+//   grep -n "func Init" internal/app/app.go
+//   grep -n "flag\.\|os.Args\|daemon\|os/exec\|os.Exit" internal/app/app.go
+//     # 确认 app.Init 是不是用 flag 包读 os.Args、-d 时是不是重执行、
+//     # 有没有 os.Exit。结论写进 §B 的注释里。
+//   grep -n "RunUntilSignal" pkg/shell/shell.go; sed -n '30,50p' pkg/shell/shell.go
+//   grep -rn "RunUntilSignal\|os.Exit" internal/api/*.go | head -20
+//     # api/restart 是不是重执行二进制（若是，库版必须禁掉它，见 §B）。
+//   grep -rn "func Init" internal/exec/*.go internal/ffmpeg/*.go | head
+//     # exec / ffmpeg 模块是不是调外部二进制；若是，首版模块列表里先排除它们，
+//     # 并在 docs 里记一笔（4 Pro 默认码流不需要 ffmpeg 转码就能出流）。
+//   grep -rn "os.Exit" --include="*.go" . | grep -v "_test.go" | head -30
+//     # 全仓扫一遍 os.Exit，列出在库版里必须改掉的点；改不掉就记为 V-01 风险，
+//     # 不要偷偷留着——库里 os.Exit 会把整个 App 杀掉。
+//
+// ---- §B：已知的三个硬约束（填模板时必须遵守） ----
+// B1. 禁止 os.Exit：失败一律返回非零错误码 + 写日志，绝不 os.Exit。
+// B2. 禁止依赖信号退出：shell.RunUntilSignal() 不要调；停止只由
+//     IMIStopEngine 触发（见下面 done chan 设计）。SIGINT/SIGTERM
+//     在 iOS App 进程里不是引擎的生命周期信号。
+// B3. 禁止写死路径与 exec 子进程：配置/日志一律用调用方传入的
+//     configPath/logPath；不要调 ffmpeg 二进制、不要 exec 任何子进程、
+//     不要写死 /tmp、当前目录或 ~。
+//
+// ---- §C：多次启停是未验证的最大风险（不要假装已解决） ----
+// app.Init 很可能调 flag.Parse()，而 flag 包在同一进程里只能有效
+// 解析一次；各模块的 Init() 也大概率不是幂等的（重复注册 HTTP 路由、
+// 重复监听端口会 panic 或报“端口已被占用”）。
+// 因此下面给出的状态机是“首版先做到单次启动 + 幂等停止”，
+// IMIStartEngine 第二次调用时：
+//   - 若上一次已停止但服务器其实没真正释放（go2rtc 没有公开的 Stop API），
+//     必须返回非零并写日志“restart requires App relaunch”，不要谎报成功；
+//   - 只有在 Mac 上实测证明各 Init() 可重入、且 IMIStopEngine 真能释放
+//     监听端口之后，才允许把“可多次启停”标成通过（VALIDATION.md V-01）。
+// 停止本身的语义也要在 Mac 上验证：目前模板里的 stop 只关 done chan，
+// go2rtc 的 HTTP/RTSP/WebRTC 监听是否真停、流注册表是否清理，
+// 都要实测后才能写进文档。
+//
+// 对外契约（以生成的 libgo2rtc.h 为准，不要手写改动签名）：
+//   int IMIStartEngine(const char *configPath, const char *logPath);
+//   int IMIStopEngine(void);
+//   const char *IMIEngineStatus(void);
+//
+// 沙箱路径（Swift 侧 GoEngineBridge.swift 已定）：
+//   config: Application Support/engine/go2rtc.yaml
+//   log:    Application Support/engine/engine.log
+//   权限 600；小米令牌只存在 config 里，不要再往 Keychain 写一份明文。
+
+package main
+
+/*
+#include <stdlib.h>
+*/
+import "C"
+
+import (
+	"encoding/json"
+	"sync"
+	"unsafe"
+	// TODO (MacBook 上填，§A)：把 build/go2rtc-src/main.go 的 import 块
+	// 原样抄到这里（不含 "slices" 之外的 main.go 专属依赖，按需取舍）。
+	// 必须包含的包（以 main.go 为准，先 grep 确认再写，不要凭记忆补）：
+	//   "github.com/AlexxIT/go2rtc/internal/app"
+	//   "github.com/AlexxIT/go2rtc/internal/api"
+	//   "github.com/AlexxIT/go2rtc/internal/api/ws"
+	//   "github.com/AlexxIT/go2rtc/internal/streams"
+	//   "github.com/AlexxIT/go2rtc/pkg/shell"  // 只在需要时 import；不要调 RunUntilSignal。
+	// 其余约 50 个模块的 import + Init()，一律从 main.go 的 modules 列表抄，
+	// 不要自己发明模块名，也不要漏掉 api/ws/streams 这三个基础模块。
+	// TODO (MacBook 上填)：若某个模块在 iOS 上不可用（调外部二进制、调桌面 API 等），
+	// 在这里写明排除原因，并把它从下面的 runEngine 模块列表里去掉。
+)
+
+// ---- 状态机（单次启动 + 幂等停止；多次启停见 §C，未验证） ----
+var (
+	mu       sync.Mutex
+	running  bool
+	done     chan struct{} // IMIStopEngine 关闭它；runEngine 的阻塞等待只等它。
+	startErr string        // 最近一次启动失败的原因（写日志 + 进 IMIEngineStatus）。
+)
+
+// goString 把 C 字符串安全转 Go string；nil 返回 ""。
+func goString(s *C.char) string {
+	if s == nil {
+		return ""
+	}
+	return C.GoString(s)
+}
+
+// statusJSON 生成 IMIEngineStatus 返回的 JSON；调用方负责 C.free。
+func statusJSON() *C.char {
+	mu.Lock()
+	defer mu.Unlock()
+	b, _ := json.Marshal(map[string]interface{}{
+		"running": running,
+		"error":   startErr,
+		// 注意：不要在这里回显 configPath/logPath 的完整路径（日志里有用户名）。
+	})
+	return C.CString(string(b))
+}
+
+// runEngine 是真正的启动逻辑，在独立 goroutine 里跑。
+// TODO (MacBook 上填，§A)：把 build/go2rtc-src/main.go 的 modules 列表
+// 原样搬到这里，顺序不能换。伪代码（以 main.go 为准）：
+//
+//   func runEngine(configPath, logPath string) {
+//       // 1. 注入配置路径，替代命令行 -c。
+//       //    TODO (MacBook 上验证)：app.Init 是不是用 flag 包读 os.Args？
+//       //    若是，启动前设 os.Args = []string{"go2rtc", "-c", configPath}，
+//       //    且绝不能带 -d；若 app.Init 不读 os.Args，改用它实际的
+//       //    入口（initConfig 之类）——以 app.go 源码为准，不要猜。
+//       //    注意：flag.Parse 在同一进程只能有效解析一次，这是 §C 的风险来源。
+//       // 2. 按 main.go 的顺序依次调各模块的 Init()，并按 app.Modules 做
+//       //    同样的 allow-list 过滤（name == "" 的模块永远跑）。
+//       // 3. 调 streams.SetReady()（以 main.go 为准）。
+//       // 4. 不要调 shell.RunUntilSignal()；改成：<-done（等 IMIStopEngine）。
+//       // 5. TODO：停止时如何释放 HTTP/RTSP/WebRTC 监听？go2rtc 没有公开
+//       //    Stop API——在 Mac 上实测后才能写；实测前，IMIStopEngine 只能
+//       //    做到“标记已停 + 关 done chan”，不要谎称端口已释放。
+//   }
+//
+// 下面这行是占位，填好 runEngine 之前不要删——scripts/build-go-engine.sh
+// 会检查模板里还有没有 TODO，没填完就拒绝编译。
+// TODO (MacBook 上填)：runEngine 未实现。
+
+//export IMIStartEngine
+func IMIStartEngine(configPath *C.char, logPath *C.char) C.int {
+	cfg := goString(configPath)
+	log := goString(logPath)
+	if cfg == "" || log == "" {
+		mu.Lock()
+		startErr = "IMIStartEngine: configPath/logPath must not be empty"
+		mu.Unlock()
+		return 1
+	}
+	mu.Lock()
+	if running {
+		mu.Unlock()
+		return 1 // 已在运行；不要重复启动（§C：多次启停未验证）。
+	}
+	running = true
+	startErr = ""
+	done = make(chan struct{})
+	mu.Unlock()
+
+	// TODO (MacBook 上填)：把 runEngine(cfg, log) 在 goroutine 里跑起来。
+	// 启动是异步的：返回 0 只表示“已接受启动请求”，真正的运行状态
+	// 由 IMIEngineStatus 查询；启动失败的原因写进 log 文件 + startErr。
+	// 注意：不要在这里阻塞等 runEngine 跑完——它要一直跑到 IMIStopEngine。
+	return -1 // 模板占位：runEngine 未填好之前一律返回 -1，不要假装启动成功。
+}
+
+//export IMIStopEngine
+func IMIStopEngine() C.int {
+	mu.Lock()
+	if !running {
+		mu.Unlock()
+		return 0 // 幂等：未在运行也返回 0。
+	}
+	close(done)
+	running = false
+	mu.Unlock()
+	// TODO (MacBook 上验证)：上面只关了 done chan。HTTP/RTSP/WebRTC
+	// 监听是否真停、端口是否释放、流注册表是否清理，都要实测后才能写。
+	// 实测前不要在文档里写“已释放”。
+	return 0
+}
+
+//export IMIEngineStatus
+func IMIEngineStatus() *C.char {
+	// 返回的 C 字符串由调用方（Swift 侧）负责 C.free，
+	// 不要返回指向 Go 内存的指针。
+	// 模板占位：先返回固定 JSON，真实实现按运行状态生成（见 statusJSON）。
+	_ = unsafe.Pointer(nil)
+	return statusJSON()
+}
+
+func main() {
+	// c-archive 模式下 main() 不会被调用，但 package main 必须有 main 函数。
+	// 不要在这里启动引擎——启动只由 IMIStartEngine 触发。
+}

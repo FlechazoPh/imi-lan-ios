@@ -1,0 +1,339 @@
+// !$*UTF8*$!
+// Hand-written minimal Xcode project (Phase 1 skeleton + Phase 2, NOT verified in Xcode).
+// TODO: open in Xcode on MacBook and run `xcodebuild -list` (VALIDATION.md V-14).
+// If Xcode reports errors, regenerate with `xcodegen` or Xcode's New Project wizard
+// and re-add the Swift files under IMILAN/ — do not hand-patch UUIDs blindly.
+// Phase 2: IMILAN.entitlements is referenced here so Xcode can find it, but
+// CODE_SIGN_ENTITLEMENTS is deliberately NOT forced in the build settings below:
+// unsigned builds must not reference it (they would fail), and developer-signed
+// builds set it via scripts/build-ipa-local.sh --signed / Actions signing_mode=developer.
+// See docs/MULTICAST-ENTITLEMENT.md §4 and docs/SIGNING.md.
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		111111111111111111111101 /* IMILANApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111201; };
+		111111111111111111111102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111202; };
+		111111111111111111111103 /* Camera.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111203; };
+		111111111111111111111104 /* EngineManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111204; };
+		111111111111111111111105 /* GoEngineBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111205; };
+		111111111111111111111106 /* WebViewContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111206; };
+		111111111111111111111107 /* LocalGateway.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111207; };
+		111111111111111111111108 /* Fmp4Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111208; };
+		111111111111111111111109 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111209; };
+		11111111111111111111110A /* QRLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11111111111111111111120A; };
+		11111111111111111111110B /* CameraGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11111111111111111111120B; };
+		11111111111111111111110C /* CameraCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11111111111111111111120C; };
+		11111111111111111111110D /* SingleCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11111111111111111111120D; };
+		11111111111111111111110E /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11111111111111111111120E; };
+		11111111111111111111110F /* EngineLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11111111111111111111120F; };
+		111111111111111111111110 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111210; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		111111111111111111111201 /* IMILANApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMILANApp.swift; sourceTree = "<group>"; };
+		111111111111111111111202 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		111111111111111111111203 /* Camera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera.swift; sourceTree = "<group>"; };
+		111111111111111111111204 /* EngineManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineManager.swift; sourceTree = "<group>"; };
+		111111111111111111111205 /* GoEngineBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoEngineBridge.swift; sourceTree = "<group>"; };
+		111111111111111111111206 /* WebViewContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewContainer.swift; sourceTree = "<group>"; };
+		111111111111111111111207 /* LocalGateway.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalGateway.swift; sourceTree = "<group>"; };
+		111111111111111111111208 /* Fmp4Player.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Fmp4Player.swift; sourceTree = "<group>"; };
+		111111111111111111111209 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		11111111111111111111120A /* QRLoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRLoginView.swift; sourceTree = "<group>"; };
+		11111111111111111111120B /* CameraGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraGridView.swift; sourceTree = "<group>"; };
+		11111111111111111111120C /* CameraCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCardView.swift; sourceTree = "<group>"; };
+		11111111111111111111120D /* SingleCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleCameraView.swift; sourceTree = "<group>"; };
+		11111111111111111111120E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		11111111111111111111120F /* EngineLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineLogView.swift; sourceTree = "<group>"; };
+		111111111111111111111210 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		111111111111111111111211 /* IMILAN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IMILAN.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		111111111111111111111212 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		111111111111111111111213 /* GoEngineBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GoEngineBridge.h; sourceTree = "<group>"; };
+		111111111111111111111214 /* IMILAN.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = IMILAN.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		111111111111111111111301 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		111111111111111111111401 /* IMILAN */ = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111201,
+				111111111111111111111202,
+				111111111111111111111402,
+				111111111111111111111403,
+				111111111111111111111404,
+				111111111111111111111405,
+				111111111111111111111406,
+				111111111111111111111407,
+				111111111111111111111212,
+				111111111111111111111214,
+			);
+			path = IMILAN;
+			sourceTree = "<group>";
+		};
+		111111111111111111111402 /* Models */ = {
+			isa = PBXGroup;
+			children = (111111111111111111111203,);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		111111111111111111111403 /* Engine */ = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111204,
+				111111111111111111111205,
+				111111111111111111111213,
+			);
+			path = Engine;
+			sourceTree = "<group>";
+		};
+		111111111111111111111404 /* Web */ = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111206,
+				111111111111111111111207,
+				111111111111111111111208,
+			);
+			path = Web;
+			sourceTree = "<group>";
+		};
+		111111111111111111111405 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111209,
+				11111111111111111111120A,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		111111111111111111111406 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				11111111111111111111120B,
+				11111111111111111111120C,
+				11111111111111111111120D,
+				11111111111111111111120E,
+				11111111111111111111120F,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		111111111111111111111407 /* Resources */ = {
+			isa = PBXGroup;
+			children = (111111111111111111111210,);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		111111111111111111111408 = {
+			isa = PBXGroup;
+			children = (
+				111111111111111111111401,
+				111111111111111111111409,
+			);
+			sourceTree = "<group>";
+		};
+		111111111111111111111409 = {
+			isa = PBXGroup;
+			children = (111111111111111111111211,);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		111111111111111111111501 /* IMILAN */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 111111111111111111111601;
+			buildPhases = (
+				111111111111111111111502,
+				111111111111111111111301,
+				111111111111111111111503,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = IMILAN;
+			productName = IMILAN;
+			productReference = 111111111111111111111211;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		111111111111111111111600 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					111111111111111111111501 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = 111111111111111111111602;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base, zh-Hans,);
+			mainGroup = 111111111111111111111408;
+			productRefGroup = 111111111111111111111409;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (111111111111111111111501,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		111111111111111111111503 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (111111111111111111111110,);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		111111111111111111111502 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				111111111111111111111101,
+				111111111111111111111102,
+				111111111111111111111103,
+				111111111111111111111104,
+				111111111111111111111105,
+				111111111111111111111106,
+				111111111111111111111107,
+				111111111111111111111108,
+				111111111111111111111109,
+				11111111111111111111110A,
+				11111111111111111111110B,
+				11111111111111111111110C,
+				11111111111111111111110D,
+				11111111111111111111110E,
+				11111111111111111111110F,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		111111111111111111111701 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = IMILAN/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = imi.lan.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMBED_LIBRARIES_WITH_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		111111111111111111111702 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = IMILAN/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = imi.lan.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMBED_LIBRARIES_WITH_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		111111111111111111111703 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		111111111111111111111704 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		111111111111111111111601 /* Build configuration list for PBXNativeTarget "IMILAN" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				111111111111111111111701,
+				111111111111111111111702,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		111111111111111111111602 /* Build configuration list for PBXProject "IMILAN" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				111111111111111111111703,
+				111111111111111111111704,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 111111111111111111111600;
+}
