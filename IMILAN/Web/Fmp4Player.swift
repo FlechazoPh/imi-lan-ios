@@ -3,6 +3,7 @@ import AVFoundation
 import CoreMedia
 import SwiftUI
 import UIKit
+import VideoToolbox
 
 /// fMP4 + VideoToolbox 高清路（Phase 2，B 路实现）。
 ///
@@ -639,7 +640,7 @@ private final class Fmp4Demuxer {
             customBlockSource: nil,
             offsetToData: 0,
             dataLength: data.count,
-            flags: [],
+            flags: CMBlockBufferFlags(0),
             blockBufferOut: &blockBuffer)
         guard status == noErr, let blockBuffer = blockBuffer else {
             mem.deallocate()

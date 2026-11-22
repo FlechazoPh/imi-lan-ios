@@ -17,6 +17,9 @@ enum LocalGateway {
 
     /// 把 Keychain 里的 app token 以 Cookie 形式注入 WKWebView。
     /// TODO (Phase 2): 在 WebViewContainer 加载前调用，确保首屏不 401。
+    /// @MainActor：WKHTTPCookieStore 在 Swift 6 SDK 里是 MainActor 隔离的，
+    /// 非隔离上下文里调 setCookie 会报 warning（Swift 6 下按 error 计）。
+    @MainActor
     static func injectAppToken(into store: WKWebsiteDataStore) async {
         let token = KeychainStore.shared.appToken()
         let cookie = HTTPCookie(properties: [
