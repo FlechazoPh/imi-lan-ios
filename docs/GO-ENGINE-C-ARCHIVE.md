@@ -45,19 +45,25 @@ V-01 / V-02 的“通过”标准不是“App 能看画面”，而是更小的�
 
 这是 V-01 里工作量最大的一步，**不是“加个 main.go 就能编”**。
 
-> **已核实的关键事实（2026-11-22，经浏览器读公开资料）：go2rtc 没有
+> **已核实的关键事实（2026-11-22，经浏览器读公开资料 + 2026-11-22 在
+> go2rtc 1.9.15 源码里逐行核对）：go2rtc 没有
 > 一个可导出的单一 `Run()` / `Start()` 入口函数，不要编一个出来调。**
 > 上游入口在仓库根 `main.go`（`package main`，不是 `cmd/go2rtc/main.go`）：
-> `app.Init` → 约 53 个模块的 `Init()`（顺序固定，`api` / `ws` / `streams`
-> 在前）→ `streams.SetReady()` → `shell.RunUntilSignal()`
-> （`pkg/shell/shell.go`，阻塞等 `SIGINT` / `SIGTERM`；另有
+> `app.Init` → **45 个模块的 `Init()`（顺序固定，`api` / `ws` / `streams`
+> 在前；engine/libimi/main.go 保留其中 42 个，排除 exec、ffmpeg、onvif，
+> 原因见该文件头注释）** → 阻塞式信号等待（`pkg/shell/shell.go` 的
+> `RunUntilSignal()`，等 `SIGINT` / `SIGTERM`；另有
 > `api/exit` / `api/restart` 处理器也能结束进程）。
+> **1.9.15 的 main() 结尾没有 `streams.SetReady()` 调用**（全仓 grep 无此
+> 调用，先前模板写错了，已纠正；库版里用等 done chan 代替信号等待）。
 > `app.Init`（`internal/app/app.go` 27–90）做：flag 解析 `-c/--config`、
 > `-d/--daemon`、`-v/--version`；`initConfig()`；`initLogger()`；
 > 读 `app.modules` 填 `app.Modules`。`-d` daemon 模式会用 `os/exec.Command`
 > 把自己重执行一次并退出父进程——iOS 库里绝对不能走这条路。
-> `api/restart` 同样会重执行二进制（以源码为准，先 grep 确认），库版必须禁掉它。
-> 填模板前先跑 `engine/libimi/main.go.template` §A 的 grep 清单。
+> 全仓 `os.Exit` 只有四处：app.go 的 `-v` / `-d` 两条路；`api/exit`
+> 处理器（POST `/api/exit` 时触发）；onvif 的 DeviceSystemReboot 处理
+> （onvif 模块已排除）。`api/restart` 用 `syscall.Exec` 重执行进程，
+> 库版里不要调它。填模板前先跑 `engine/libimi/main.go.template` §A 的 grep 清单。
 
 go2rtc 上游的入口 `main()` 会：
 
