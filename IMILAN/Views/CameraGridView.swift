@@ -34,6 +34,14 @@ struct CameraGridView: View {
                     }
                     .padding(.horizontal)
 
+                    if let error = store.lastError {
+                        // 刷新失败时显示真实原因（引擎未通 / 未登录 / 账号下无设备 / 网络错误）。
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .padding(.horizontal)
+                    }
+
                     if store.cameras.isEmpty {
                         ContentUnavailableView(
                             "还没有摄像头",
@@ -63,6 +71,22 @@ struct CameraGridView: View {
         .sheet(isPresented: $showQRLogin) { QRLoginView() }
         .fullScreenCover(item: $selectedCamera) { camera in
             SingleCameraView(camera: camera)
+        }
+        .task {
+            // 进入页面时引擎已 running 就拉一次设备列表。
+            if engine.state == .running {
+                await store.refreshFromEngine()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("IMILoginDidSucceed"))) { _ in
+            // 扫码登录成功后再刷新一次（此时才有 userID 可拉设备）。
+            Task { await store.refreshFromEngine() }
+        }
+        .onChange(of: engine.state) { _, newState in
+            // 引擎后启动（比页面晚）时也拉一次，避免列表一直为空。
+            if newState == .running {
+                Task { await store.refreshFromEngine() }
+            }
         }
     }
 }

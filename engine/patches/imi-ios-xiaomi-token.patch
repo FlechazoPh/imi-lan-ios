@@ -1,0 +1,27 @@
+diff --git a/internal/xiaomi/xiaomi.go b/internal/xiaomi/xiaomi.go
+index 29a599f..539245e 100644
+--- a/internal/xiaomi/xiaomi.go
++++ b/internal/xiaomi/xiaomi.go
+@@ -643,3 +643,22 @@ func GetBaseURL(region string) string {
+ 	}
+ 	return "https://api.io.mi.com/app"
+ }
++
++// SetToken 热更新指定账号的 passToken（扫码登录后由 IMISetXiaomiToken 调用，
++// 无需重启引擎）。更新 tokens 后删掉该账号的云端会话缓存，下次取云端会话
++// 时用新 token 重新登录。
++//
++// 注意：xiaomi-login 补丁让 getCloud 优先用内存里的 xiaomi-credentials
++//（serviceToken+ssecurity）；只换 tokens 不清 creds 时，下次仍走旧会话。
++// 所以这里同时删掉 creds[userID]，让新 token 的 LoginWithToken 路径生效。
++// 磁盘上的 go2rtc.yaml 已由 Swift 侧写好新凭据，重启后仍以新凭据为准。
++func SetToken(userID, token string) {
++	cloudsMu.Lock()
++	defer cloudsMu.Unlock()
++	if tokens == nil {
++		tokens = map[string]string{}
++	}
++	tokens[userID] = token
++	delete(creds, userID)
++	delete(clouds, userID)
++}

@@ -35,6 +35,8 @@
 		11111111111111111111110D /* SingleCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11111111111111111111120D; };
 		11111111111111111111110E /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11111111111111111111120E; };
 		11111111111111111111110F /* EngineLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11111111111111111111120F; };
+		111111111111111111111121 /* XiaomiQRLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111221; };
+		111111111111111111111122 /* XiaomiConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111222; };
 		111111111111111111111111 /* libgo2rtc.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 111111111111111111111215; };
 		111111111111111111111110 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 111111111111111111111210; };
 /* End PBXBuildFile section */
@@ -55,6 +57,8 @@
 		11111111111111111111120D /* SingleCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleCameraView.swift; sourceTree = "<group>"; };
 		11111111111111111111120E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		11111111111111111111120F /* EngineLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineLogView.swift; sourceTree = "<group>"; };
+		111111111111111111111221 /* XiaomiQRLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XiaomiQRLogin.swift; sourceTree = "<group>"; };
+		111111111111111111111222 /* XiaomiConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XiaomiConfig.swift; sourceTree = "<group>"; };
 		111111111111111111111210 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		111111111111111111111211 /* IMILAN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IMILAN.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		111111111111111111111212 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -103,6 +107,7 @@
 			children = (
 				111111111111111111111204,
 				111111111111111111111205,
+				111111111111111111111222,
 				111111111111111111111213,
 				111111111111111111111215,
 			);
@@ -124,6 +129,7 @@
 			children = (
 				111111111111111111111209,
 				11111111111111111111120A,
+				111111111111111111111221,
 			);
 			path = Auth;
 			sourceTree = "<group>";
@@ -237,6 +243,8 @@
 				11111111111111111111110D,
 				11111111111111111111110E,
 				11111111111111111111110F,
+				111111111111111111111121,
+				111111111111111111111122,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

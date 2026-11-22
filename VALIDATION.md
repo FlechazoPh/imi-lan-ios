@@ -87,14 +87,12 @@ multicast entitlement 是否必需、是否已获批，见 V-18；
 
 ## 2. 播放（4 Pro 是 4K H.265，分两路验）
 
-- [] **V-05 H.264 子码流 WebRTC**：WKWebView 内 `video-rtc.js` 能出画面，
-延迟实测（目标 0.3–2 秒）。这是 4 Pro 的**第一路**，先过这一路再验高清。
-若流畅码流也不出画面，先查 V-02（登录/取密钥）与 V-03（发现/握手），不要先调播放器。
+- [] **V-05 H.264 子码流 WebRTC**：**已作废（2026-11-22 Windows 实测）**——4 Pro 四个 subtype 全是 H.265，没有 H.264 码流；流畅档（subtype=1，848×480）同样走 V-06 的 fMP4 路，不走 WebRTC。
 - [] **V-06 H.265 主码流 fMP4 + VideoToolbox**：WKWebView WebRTC 预期失败
 （已在 ARCHITECTURE.md §7.1 说明）；改走 fMP4（`/api/stream.mp4`）+ VideoToolbox 硬解能出画面；
-`hev1` → `hvc1` 问题已处理；`Fmp4Player.swift` 的 demux/解码/渲染已实现（目前仍是 TODO 占位）。
+`hev1` → `hvc1` 问题已处理：`Fmp4Player.swift` 不依赖 sample entry 类型，直接从 hvcC 的 VPS/SPS/PPS 建格式描述。**实现已完成（2026-11-22，B 路），真机出画面待验证**。
 - [] **V-20 4K 高清单路**（Phase 2 新增，4 Pro 专属）：1 路 4 Pro 高清（3840×2160 H.265）
-经 fMP4 路能稳定出画面 10 分钟以上；默认画质仍为“流畅”，手动切“高清”才走 fMP4 路；
+经 fMP4 路能稳定出画面 10 分钟以上；默认画质为标清 1080p（无 subtype），手动切“高清”才走 subtype=0 的 4K；
 多路 4K 并发（2×2 全高清）**不在首版验证范围内**，单路通过即算 V-20 通过。
 - [] **V-07 画中画**：`AVPictureInPictureController` 能从 WKWebView 的 `<video>` 拉起；
 若不行，改走原生 `AVPlayerLayer` 路。
@@ -104,8 +102,9 @@ multicast entitlement 是否必需、是否已获批，见 V-18；
 
 ## 3. 登录与安全
 
-- [] **V-09 扫码登录全流程**：`/qr/new` 取二维码 → 米家 App 扫码 → 长轮询到 `done` →
-凭据写回 `go2rtc.yaml` → `/api/restart` → 1–2 秒后画面恢复。
+- [] **V-09 扫码登录全流程**：小米扫码（`longPolling/loginUrl` 取二维码 → 米家 App 扫码 → 轮询 `lp` 到扫码 → 跟 `location` 链取凭据）→
+凭据写回 `go2rtc.yaml`（`xiaomi:` / `xiaomi-credentials:` 段）→ `IMISetXiaomiToken` 热更新运行中引擎（无需 `/api/restart`，iOS 库版调它会重执行进程）→
+`GET /api/xiaomi` 拉设备列表。**实现已完成（2026-11-22，A 路，Swift 原生 + `engine/patches/imi-ios-xiaomi-token.patch`），真机全流程待验证**。
 - [] **V-10 两步验证**：开两步验证的账号扫码是否仍可用；密码登录报 `404` 时的提示是否准确。
 - [] **V-11 鉴权隔离**：同机其他 App 扫 `127.0.0.1:19841` / 随机 go2rtc 端口时，
 无 `imi_app` Cookie / 无 Basic Auth 是否一律 401；RTSP 默认关闭或只绑 unix socket。
@@ -132,15 +131,14 @@ Phase 2 用户已明确坚持独立 App，**不再作为必经验证**。仅在 
 ## 5. 型号（4 Pro 专属）
 
 - [] **V-17 型号确认**：model 已验证为 `xiaomi.camera.091ac1`（V-00a），
-`Camera.swift` 与 `docs/CAMERA-4PRO.md` §2 已同步。剩余待确认：
-4 Pro 走 miss 还是 TUTK；`subtype` 映射（高清/流畅各对应哪个 subtype，先试 `subtype=2/3`，
-由另一路在 Windows 上验证，不阻塞 V-01/V-02）；流地址
-`xiaomi://…?did=&model=` 能否取到密钥（Windows 上默认码流已出，iOS 库版上待验）。
-2020 年后大多走 `miss`/CS2，支持概率高；但 4 Pro 是 2026 年新机，未验证前不要写死结论。
+`Camera.swift` 与 `docs/CAMERA-4PRO.md` §2 已同步。`subtype` 映射已验证（2026-11-22 Windows 实测）：
+4K=subtype 0/3、流畅=subtype 1（848×480 H.265）、默认=无 subtype（1080p H.265）；全部档位 H.265，无 H.264。
+剩余待确认：流地址 `xiaomi://…?did=&model=` 能否在 iOS 库版上取到密钥（Windows 上默认码流已出）。
 - [] **V-19 4 Pro 云台**（Phase 2 新增）：`miss cmdMotorReq=0x112` 在 4 Pro 上是否生效——
 方向盘上下左右按住持续转、松手停（`{"operation":-1001}`），无斜向；
 倒装时“方向反转”四档是否正确；轻点步长（小/中/大）是否符合预期。
 若按了画面不动，先记“该型号 operation 取值可能不同”，不要当成补丁失败，也不要当成 App 坏了。
+**实现已完成（2026-11-22，B 路，`GET /ptz?name=<完整 src>&move=…`，按住发 move、松手发 stop、1 秒安全自动停），真机待验证**；Windows 上云台已验证能动（左=1、右=2、上=3、下=4）。
 - [] **V-18 multicast entitlement 申请与配置**（Phase 2 新增）：
 ① 用户已按 `docs/MULTICAST-ENTITLEMENT.md` §3 向 Apple 提交申请（Account Holder 提交，
 写明 UDP 32108 / CS2 发现协议与“Bonjour 替代不了”的理由）；② Apple 邮件获批；

@@ -39,6 +39,7 @@
 //   int IMIStartEngine(const char *configPath, const char *logPath);
 //   int IMIStopEngine(void);
 //   const char *IMIEngineStatus(void);
+//   int IMISetXiaomiToken(const char *userID, const char *token);
 
 package main
 
@@ -299,6 +300,20 @@ func IMIEngineStatus() *C.char {
 	// 返回的 C 字符串由调用方（Swift 侧）负责 C.free，
 	// 不要返回指向 Go 内存的指针。
 	return statusJSON()
+}
+
+//export IMISetXiaomiToken
+func IMISetXiaomiToken(userID *C.char, token *C.char) C.int {
+	// 扫码登录后热更新小米 passToken，无需重启引擎/App。
+	// 空参返回 1；成功返回 0（见 engine/patches/imi-ios-xiaomi-token.patch）。
+	uid := goString(userID)
+	tok := goString(token)
+	if uid == "" || tok == "" {
+		return 1
+	}
+	xiaomi.SetToken(uid, tok)
+	appendLog("IMISetXiaomiToken: token updated")
+	return 0
 }
 
 func main() {

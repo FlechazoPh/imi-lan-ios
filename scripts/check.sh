@@ -12,11 +12,12 @@ for f in README.md ARCHITECTURE.md VALIDATION.md .gitignore \
   IMILAN/IMILANApp.swift IMILAN/ContentView.swift IMILAN/Info.plist IMILAN/IMILAN.entitlements \
   IMILAN/Models/Camera.swift \
   IMILAN/Engine/EngineManager.swift IMILAN/Engine/GoEngineBridge.swift IMILAN/Engine/GoEngineBridge.h \
+  IMILAN/Engine/XiaomiConfig.swift \
   IMILAN/Web/WebViewContainer.swift IMILAN/Web/LocalGateway.swift IMILAN/Web/Fmp4Player.swift \
-  IMILAN/Auth/KeychainStore.swift IMILAN/Auth/QRLoginView.swift \
+  IMILAN/Auth/KeychainStore.swift IMILAN/Auth/QRLoginView.swift IMILAN/Auth/XiaomiQRLogin.swift \
   IMILAN/Views/CameraGridView.swift IMILAN/Views/CameraCardView.swift \
   IMILAN/Views/SingleCameraView.swift IMILAN/Views/SettingsView.swift IMILAN/Views/EngineLogView.swift \
-  engine/libimi/main.go.template \
+  engine/libimi/main.go.template engine/patches/imi-ios-xiaomi-token.patch \
   .github/workflows/build-ipa.yml \
   scripts/build-ipa-local.sh scripts/build-go-engine.sh scripts/clangwrap-ios.sh; do
   check "$f"

@@ -37,6 +37,17 @@ enum LocalGateway {
         }
     }
 
-    /// TODO (Phase 2): 健康检查 GET {baseURL}health，免令牌。
-    static func healthCheck() async -> Bool { false }
+    /// 健康检查：GET http://127.0.0.1:1984/api/streams，5 秒超时，
+    /// 200 返回 true，其余状态或网络错误返回 false。
+    static func healthCheck() async -> Bool {
+        guard let url = URL(string: GoEngineBridge.engineBaseURL + "/api/streams") else { return false }
+        var request = URLRequest(url: url, timeoutInterval: 5)
+        request.httpMethod = "GET"
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            return (response as? HTTPURLResponse)?.statusCode == 200
+        } catch {
+            return false
+        }
+    }
 }

@@ -21,7 +21,7 @@
 #   交接位置：IMILAN/Engine/vendor/（不进 git，见 .gitignore）
 #
 # 前置见 docs/GO-ENGINE-C-ARCHIVE.md §2（Go 版本以 go2rtc go.mod 为准、Xcode 16+、
-#   go2rtc 1.9.15、两个补丁、cmd/libimi 入口）。Step 3 的模板
+#   go2rtc 1.9.15、三个补丁、cmd/libimi 入口）。Step 3 的模板
 #   （engine/libimi/main.go.template）必须先在 Mac 上按源码填好，否则 Step 4
 #   一定失败——这是预期的，失败信息会指到模板。
 # 每一步失败都直接退出（set -euo pipefail + 显式 exit 1）并打印原因，不继续往下编。
@@ -114,9 +114,12 @@ fi
 echo "补丁文件："
 ls -l "$PATCH_DIR/xiaomi-login.patch" "$PATCH_DIR/xiaomi-control.patch"
 sha256sum "$PATCH_DIR/"*.patch 2>/dev/null || shasum -a 256 "$PATCH_DIR/"*.patch
+# 仓库自带的 token 热更新补丁（不从上游取，见 Step 2）。
+test -f engine/patches/imi-ios-xiaomi-token.patch \
+  || fail "缺仓库自带补丁 engine/patches/imi-ios-xiaomi-token.patch"
 
 # ---- Step 2: 打补丁（顺序不能换） ----------------------------------------
-echo "== Step 2: 打补丁 xiaomi-login → xiaomi-control =="
+echo "== Step 2: 打补丁 xiaomi-login → xiaomi-control → imi-ios-xiaomi-token =="
 if [ "$SKIP_PATCHES" -eq 1 ]; then
   echo "跳过打补丁（--skip-patches）。若补丁其实没打，Step 6 会失败。"
 else
@@ -135,6 +138,20 @@ else
     (cd "$SRC_DIR" && patch -p1 < "../patches/$p.patch") \
       || fail "$p.patch 正式打补丁失败"
   done
+  # 本仓库自带的 token 热更新补丁（engine/patches/，不从上游取）：
+  # 必须在 xiaomi-login → xiaomi-control 之后打（它依赖补丁后的 tokens/creds/clouds）。
+  cp engine/patches/imi-ios-xiaomi-token.patch "$PATCH_DIR/" \
+    || fail "复制 engine/patches/imi-ios-xiaomi-token.patch 失败"
+  echo "-- dry-run imi-ios-xiaomi-token.patch"
+  (cd "$SRC_DIR" && patch -p1 --dry-run < "../patches/imi-ios-xiaomi-token.patch") || {
+    echo "dry-run 失败。先看下面两行，再决定是已打过（用 --skip-patches）还是版本不对："
+    git -C "$SRC_DIR" status --short | head -20
+    git -C "$SRC_DIR" diff --stat | head -20
+    echo "FAIL: imi-ios-xiaomi-token.patch 干跑失败（可能已打过或源码版本不对）。勿强行 -f 打。" >&2
+    exit 1
+  }
+  (cd "$SRC_DIR" && patch -p1 < "../patches/imi-ios-xiaomi-token.patch") \
+    || fail "imi-ios-xiaomi-token.patch 正式打补丁失败"
   echo "-- 补丁改动统计："
   git -C "$SRC_DIR" diff --stat
 fi
@@ -197,10 +214,10 @@ fi
 echo "== Step 6: 校验 =="
 lipo -info "$OUT_DIR/libgo2rtc.a" || fail "lipo -info 失败"
 lipo -info "$OUT_DIR/libgo2rtc.a" | grep -q "arm64" || fail "lipo -info 里没有 arm64（V-01 未通过）"
-echo "-- 导出符号（应能找到 IMIStartEngine / IMIStopEngine / IMIEngineStatus）："
-nm -g "$OUT_DIR/libgo2rtc.a" | grep -E "IMIStartEngine|IMIStopEngine|IMIEngineStatus" || {
+echo "-- 导出符号（应能找到 IMIStartEngine / IMIStopEngine / IMIEngineStatus / IMISetXiaomiToken）："
+nm -g "$OUT_DIR/libgo2rtc.a" | grep -E "IMIStartEngine|IMIStopEngine|IMIEngineStatus|IMISetXiaomiToken" || {
   echo "FAIL: 导出符号缺失，V-01 未通过。先查 cmd/libimi 的 //export 是否写对。" >&2; exit 1; }
-grep -E "IMIStartEngine|IMIStopEngine|IMIEngineStatus" "$OUT_DIR/libgo2rtc.h" || {
+grep -E "IMIStartEngine|IMIStopEngine|IMIEngineStatus|IMISetXiaomiToken" "$OUT_DIR/libgo2rtc.h" || {
   echo "FAIL: 头文件里缺导出声明，V-01 未通过。" >&2; exit 1; }
 echo "-- 产物大小："
 ls -lh "$OUT_DIR/libgo2rtc.a" "$OUT_DIR/libgo2rtc.h"

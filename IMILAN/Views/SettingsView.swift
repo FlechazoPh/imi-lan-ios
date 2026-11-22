@@ -16,7 +16,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 Text(engine.mode == .local
-                     ? "本机引擎尚未验证（见 ARCHITECTURE.md §4.1），当前不可用。"
+                     ? "本机引擎跑在 iPhone 内（go2rtc 1.9.15 + 小米补丁），App 启动时自动启动，监听 127.0.0.1:1984；当前状态：\(engine.state.rawValue)。"
                      : "过渡版：引擎跑在家里 MacBook/Windows 上，iPhone 只做播放器。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -46,7 +46,7 @@ struct SettingsView: View {
 
             Section("关于") {
                 LabeledContent("版本", value: "0.1.0-skeleton（未验证）")
-                LabeledContent("引擎", value: "go2rtc 1.9.15 + 小米补丁（TODO，未接入）")
+                LabeledContent("引擎", value: "go2rtc 1.9.15 + 小米补丁（已接入，未真机验证）")
                 Text("非官方项目，与小米/米家无任何关联。请只在自己账号下、自己有权使用的设备上使用。")
                     .font(.caption)
                     .foregroundStyle(.secondary)

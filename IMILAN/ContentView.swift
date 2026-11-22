@@ -28,5 +28,6 @@ struct ContentView: View {
         }
         // 底部 Tab 不遮挡内容：用 safeAreaInset 而不是 overlay，灵动岛区域不放按钮。
         .tint(.blue)
+        .task { engine.startIfNeeded() }
     }
 }

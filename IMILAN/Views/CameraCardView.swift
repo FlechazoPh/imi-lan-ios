@@ -1,26 +1,42 @@
 import SwiftUI
 
-/// 摄像头卡片（Phase 1 骨架）。
+/// 摄像头卡片：画面为 Fmp4PlayerView 真实播放（H.265 fMP4 + VideoToolbox）。
 ///
-/// 画面本身由 WKWebView 壳渲染（见 Web/WebViewContainer），本卡片只做占位 UI：
-///  Phase 1 先用色块 + 名称/型号/信号占位，Phase 2 再把真实视频层接进来。
-///  触摸目标 ≥44pt，工具按钮用 .frame(minHeight: 44)。
+/// 引擎 running 且已登录（UserDefaults 有 xiaomiUserID）时自动播放；
+/// 画质 Picker 切换时停掉旧流、用新 subtype 重播。
+/// PiP / 截图仍是 TODO（按钮保留，不假装已实现）。
+/// 触摸目标 ≥44pt，工具按钮用 .frame(minHeight: 44)。
 struct CameraCardView: View {
     var camera: Camera
+    @EnvironmentObject private var engine: EngineManager
+    @EnvironmentObject private var store: CameraStore
+    @StateObject private var player = Fmp4Player()
     @State private var quality: StreamQuality = .standard // 首版默认 1080p（无 subtype），已验证；见 Models/Camera.swift
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 画面占位：16:9，Phase 2 换成 CameraWebView / Fmp4Player 层。
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.black.opacity(0.85))
-                .aspectRatio(16 / 9, contentMode: .fit)
-                .overlay {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.black.opacity(0.85))
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                Fmp4PlayerView(player: player)
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                if let error = player.lastError {
+                    // 播放失败时显示真实错误文案（HTTP 状态 / 引擎报错 / 视频层报错）。
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .padding(8)
+                } else if !player.isPlaying {
                     VStack(spacing: 6) {
                         Image(systemName: "video.fill")
                             .font(.title2)
                             .foregroundStyle(.white.opacity(0.7))
-                        Text("画面占位（TODO）")
+                        Text(engine.state == .running ? "正在连接画面…" : "引擎未运行")
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.7))
                         Text(camera.name)
@@ -28,6 +44,7 @@ struct CameraCardView: View {
                             .foregroundStyle(.white.opacity(0.5))
                     }
                 }
+            }
 
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -72,5 +89,31 @@ struct CameraCardView: View {
         .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
+        .onAppear { startPlaybackIfReady() }
+        .onDisappear { player.stop() }
+        .onChange(of: engine.state) { _, newState in
+            if newState == .running {
+                startPlaybackIfReady()
+            } else {
+                player.stop()
+            }
+        }
+        .onChange(of: quality) { _, _ in
+            // 画质切换：停掉旧流，用新 subtype 重播。
+            player.stop()
+            startPlaybackIfReady()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("IMILoginDidSucceed"))) { _ in
+            startPlaybackIfReady()
+        }
+    }
+
+    private func startPlaybackIfReady() {
+        guard engine.state == .running else { return }
+        guard let url = store.streamURL(for: camera, quality: quality) else {
+            player.lastError = "未登录小米账号：请先扫码登录"
+            return
+        }
+        player.play(streamURL: url)
     }
 }
