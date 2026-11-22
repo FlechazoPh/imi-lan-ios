@@ -8,7 +8,7 @@ import Combine
 /// 不能像安卓那样 exec 独立二进制。本文件目前只做状态机 + 日志占位，
 /// 不调用任何 Go 代码。
 final class EngineManager: ObservableObject {
-    @Published var mode: EngineMode = .remote   // 默认外接，避免用户误以为本机已通
+    @Published var mode: EngineMode = .local   // 独立版默认本机引擎（Phase 1B 已接入）
     @Published var state: EngineState = .stopped
     @Published var logLines: [String] = []
     @Published var lastError: String?
@@ -37,18 +37,26 @@ final class EngineManager: ObservableObject {
             state = .running
             log("外接引擎已连接（占位，未真实校验）")
         case .local:
-            // TODO (Phase 1B): 接 GoEngineBridge.IMIStartEngine(configPath:logPath:)
-            // 前置验证见 VALIDATION.md V-01…V-04。
-            state = .failed
-            lastError = "本机引擎尚未验证：Go c-archive 库未接入（见 ARCHITECTURE.md §4.1）"
-            log("本机引擎启动被拒绝：libgo2rtc.a 缺失")
+            state = .starting
+            log("本机模式：启动内嵌 go2rtc 引擎…")
+            switch GoEngineBridge.start() {
+            case .success:
+                state = .running
+                log("本机引擎已启动（go2rtc 内嵌库，监听见 engine.log）")
+            case .failure(let error):
+                state = .failed
+                lastError = error.localizedDescription
+                log("本机引擎启动失败：\(error.localizedDescription)")
+            }
         }
     }
 
     func stop() {
-        // TODO (Phase 1B): 接 GoEngineBridge.IMIStopEngine()
+        if mode == .local {
+            _ = GoEngineBridge.stop()
+        }
         state = .stopped
-        log("引擎已停止（占位）")
+        log("引擎已停止")
     }
 
     func restart() {

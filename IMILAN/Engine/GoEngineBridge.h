@@ -1,22 +1,18 @@
+
 //
-//  GoEngineBridge.h — c-archive 桥接头（占位，Phase 1）
+//  GoEngineBridge.h — c-archive 桥接头（Phase 1B）
 //
-//  真实头文件由 Go 编译生成：
+//  导出声明由 Go 编译生成，不要手写改动签名：
 //      CGO_ENABLED=1 GOOS=ios GOARCH=arm64 CC=<clangwrap.sh> \
 //        go build -buildmode=c-archive -o libgo2rtc.a ./cmd/libimi
-//  生成的 libgo2rtc.h 会声明 IMIStartEngine / IMIStopEngine 等导出函数。
-//  本文件只是占位声明，链接时没有 libgo2rtc.a 会失败 —— 这是预期的，
-//  见 ARCHITECTURE.md §4.1 与 VALIDATION.md V-01。
-//
-//  TODO (Phase 1B): 用真实生成的头文件替换本文件，不要手写改动导出签名。
+//  生成的 libgo2rtc.h 由 scripts/build-go-engine.sh 交接到
+//  IMILAN/Engine/vendor/（不进 git），本文件直接包含它。
+//  先跑构建脚本再编 Xcode，否则头文件缺失、Swift 编译失败——这是预期的。
 //
 
 #ifndef GoEngineBridge_h
 #define GoEngineBridge_h
 
-// TODO: 待 libgo2rtc.a 生成后，由 Go 侧 //export 生成以下声明：
-//   int IMIStartEngine(const char *configPath, const char *logPath);
-//   int IMIStopEngine(void);
-//   const char *IMIEngineStatus(void);
+#include "vendor/libgo2rtc.h"
 
 #endif /* GoEngineBridge_h */

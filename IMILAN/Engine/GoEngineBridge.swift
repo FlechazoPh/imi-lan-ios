@@ -1,15 +1,14 @@
 import Foundation
 
-/// Swift 侧 Go 引擎桥接（Phase 1 骨架，占位）。
+/// Swift 侧 Go 引擎桥接（Phase 1B：已接入 libgo2rtc.a）。
 ///
-/// 设计：Go 侧用 `//export` 导出 C 函数，Swift 经 Bridging Header 调用。
-/// 本文件目前不链接任何 Go 库，所有方法都返回“未接入”，避免在骨架阶段
-/// 假装引擎已跑通。
+/// Go 侧用 `//export` 导出 C 函数（见 engine/libimi/main.go），
+/// 由 go build -buildmode=c-archive 生成 libgo2rtc.a + libgo2rtc.h。
+/// 桥接头 IMILAN/Engine/GoEngineBridge.h 包含生成的 libgo2rtc.h
+/// （构建时由 scripts/build-go-engine.sh 交接到 Engine/vendor/）。
 ///
-/// 待接入时（Phase 1B）：
-///  1. 在 MacBook / Actions 上编出 libgo2rtc.a + libgo2rtc.h（见 scripts/build-go-engine.sh）
-///  2. 把 .a / .h 拖进 Xcode target，Bridging Header 指向 GoEngineBridge.h
-///  3. 把下面的 fatalError 占位换成真实调用，并处理 Go 的 char* / 错误码
+/// 启动是异步的：IMIStartEngine 返回 0 只表示“已接受启动请求”，
+/// 真正的运行状态由 IMIEngineStatus 查询；失败原因写进日志文件与状态 JSON。
 enum GoEngineBridge {
     /// 配置与日志的沙箱路径（与安卓的 files/engine/ 对应）。
     static var configPath: String {
@@ -26,20 +25,47 @@ enum GoEngineBridge {
         return dir.appendingPathComponent("engine.log").path
     }
 
-    /// TODO (Phase 1B): 替换为真实的 IMIStartEngine(configPath, logPath) 调用。
-    static func start() -> Result<Void, Error> {
-        .failure(BridgeError.notLinked)
+    /// 引擎状态（IMIEngineStatus 返回的 JSON，如 {"running":true,"error":""}）。
+    static func status() -> [String: Any] {
+        guard let cStr = IMIEngineStatus() else { return ["running": false] }
+        defer { free(cStr) }
+        let json = String(cString: cStr)
+        guard let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return ["running": false, "error": "bad status JSON: \(json)"] }
+        return obj
     }
 
-    /// TODO (Phase 1B): 替换为真实的 IMIStopEngine() 调用。
+    /// 启动本机引擎。成功返回 .success；失败返回 .failure，原因来自状态 JSON。
+    static func start() -> Result<Void, Error> {
+        let rc = configPath.withCString { cCfg in
+            logPath.withCString { cLog in
+                IMIStartEngine(UnsafeMutablePointer(mutating: cCfg),
+                               UnsafeMutablePointer(mutating: cLog))
+            }
+        }
+        guard rc == 0 else {
+            let err = (status()["error"] as? String) ?? ""
+            let msg = err.isEmpty ? "IMIStartEngine failed (code \(rc))" : err
+            return .failure(BridgeError.startFailed(msg))
+        }
+        return .success(())
+    }
+
+    /// 停止本机引擎（幂等：未在运行也返回成功）。
+    /// 注意：只关 done chan；HTTP/RTSP/WebRTC 监听是否真停、端口是否释放，
+    /// go2rtc 没有公开的 Stop API，实测前不声称已释放。
     static func stop() -> Result<Void, Error> {
-        .failure(BridgeError.notLinked)
+        _ = IMIStopEngine()
+        return .success(())
     }
 
     enum BridgeError: LocalizedError {
-        case notLinked
+        case startFailed(String)
         var errorDescription: String? {
-            "Go 引擎库未接入：libgo2rtc.a 缺失（见 ARCHITECTURE.md §4.1，验证 V-01）"
+            switch self {
+            case .startFailed(let msg): return "本机引擎启动失败：\(msg)"
+            }
         }
     }
 }
