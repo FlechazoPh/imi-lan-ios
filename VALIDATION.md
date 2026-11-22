@@ -29,8 +29,11 @@ model `xiaomi.camera.091ac1`（非 `chuangmi.*` 系），IP 192.168.1.100（示�
 
 ## 1. 引擎内嵌（最大堵点）
 
-- [] **V-01 Go c-archive 库化**：按 `docs/GO-ENGINE-C-ARCHIVE.md` §4 跑
-`scripts/build-go-engine.sh`，编出 iOS arm64 的 `libgo2rtc.a` + `libgo2rtc.h`。
+- [x] **V-01 Go c-archive 库化（构建部分已通过，真机调用待 V-02）**：2026-11-22
+Actions 第 5 轮（runs/44998301043）成功：`libgo2rtc.a` 编出（`lipo` 含 arm64，
+`nm` 找到三个导出函数）、Swift 侧已链接并调用 `IMIStartEngine`（桥接头通过，
+`-lresolv` 已补）。IPA 已出（见下）。**未验证的仍是真机上的事**：引擎在真机上
+是否真能启动、端口是否监听、多次启停与 `IMIStopEngine` 是否释放端口，须真机实测。
   - **验收标准（全部满足才算通过）**：
     1. `lipo -info build/libgo2rtc.a` 含 `arm64`；
     2. `nm -g build/libgo2rtc.a` 能找到 `IMIStartEngine / IMIStopEngine / IMIEngineStatus`；
@@ -41,10 +44,11 @@ model `xiaomi.camera.091ac1`（非 `chuangmi.*` 系），IP 192.168.1.100（示�
   - **前置（见 docs/GO-ENGINE-C-ARCHIVE.md §2 P-0…P-6）**：MacBook/macOS runner、
     Xcode 16+、Go（版本以 go2rtc `go.mod` 为准）、go2rtc 1.9.15 源码、
     两个补丁、`engine/libimi/main.go` 已按模板 §A 填好（无 `TODO`、无 `RunUntilSignal`）。
-  - **关键事实**：go2rtc 没有单一 `Run()`/`Start()` 入口；入口是根 `main.go`
-    的模块列表（`app.Init` → 约 53 个 `Init()` → `streams.SetReady()` →
-    `shell.RunUntilSignal()`）。libimi 必须把该列表原样抄过来，换掉最后的
-    信号等待，见 `engine/libimi/main.go.template` §A/§C。
+  - **关键事实（已按 1.9.15 源码纠正）**：go2rtc 没有单一 `Run()`/`Start()` 入口；
+    入口是根 `main.go` 的模块列表（`app.Init` → **45 个** `Init()`，
+    libimi 保留 42 个，排除 exec、ffmpeg、onvif → 阻塞式信号等待，
+    **1.9.15 没有 `streams.SetReady()` 调用**）。libimi 把该列表原样抄过来，
+    换掉最后的信号等待，见 `engine/libimi/main.go` 文件头注释。
   - **多次启停未验证**：`flag.Parse()` 与各模块 `Init()` 大概率不是幂等的；
     首版只保证单次启动 + 幂等停止，第二次启动必须返回错误，不要谎报成功。
     只有实测证明可重入、且 `IMIStopEngine` 真能释放监听端口之后，才补标“可多次启停”。
