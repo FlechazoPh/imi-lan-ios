@@ -257,6 +257,10 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/IMILAN/Engine/vendor",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lresolv",
+				);
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = imi.lan.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -280,6 +284,10 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/IMILAN/Engine/vendor",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lresolv",
 				);
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = imi.lan.ios;
